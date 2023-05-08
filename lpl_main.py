@@ -58,7 +58,7 @@ def cli_main():
     seed_everything(args.random_seed)
 
     # Set up log directories (for experimental sanity) and tensorboard logger
-    ouputdir = os.path.expanduser("../data/lpl")
+    ouputdir = os.path.expanduser("data/lpl")
     dataset = args.dataset
     if args.downsample_images:
         dataset = dataset + "_downsampled"
@@ -68,14 +68,14 @@ def cli_main():
     )
 
     # Create datamodule
-    data_dir = os.path.join(os.path.expanduser("../data/datasets"), args.dataset)
+    data_dir = os.path.join(os.path.expanduser("data/datasets"), args.dataset)
     dm = None
     h = 0  # image size
 
     if args.dataset == "cifar10":
         dm = CIFAR10DataModule.from_argparse_args(args, data_dir=data_dir)
         normalization = cifar10_normalization()
-        (c, h, w) = dm.size()
+        (c, h, w) = dm.dims
 
     elif args.dataset == "stl10":
         dm = STL10DataModule.from_argparse_args(args, data_dir=data_dir)
@@ -85,14 +85,14 @@ def cli_main():
         else:
             dm.train_dataloader = dm.train_dataloader
         dm.val_dataloader = dm.train_dataloader_labeled
-        (c, h, w) = dm.size()
+        (c, h, w) = dm.dims
         if args.downsample_images:
             h = 32
 
     elif args.dataset == "imagenet2012":
         dm = ImagenetDataModule.from_argparse_args(args, data_dir=data_dir, image_size=196)
         normalization = imagenet_normalization()
-        (c, h, w) = dm.size()
+        (c, h, w) = dm.dims
 
     dm.train_transforms = SimCLRTrainDataTransform(h, normalize=normalization)
     dm.val_transforms = SimCLREvalDataTransform(h, normalize=normalization)

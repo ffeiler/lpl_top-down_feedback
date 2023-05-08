@@ -4,7 +4,15 @@ from models.encoders import VGG11Encoder
 
 
 class LPLNet(nn.Module):
-    def __init__(self, train_end_to_end=False, projector_mlp=False, projection_size=256, mlp_hidden_size=2048, base_image_size=32, no_biases=False):
+    def __init__(
+        self,
+        train_end_to_end=False,
+        projector_mlp=False,
+        projection_size=256,
+        mlp_hidden_size=2048,
+        base_image_size=32,
+        no_biases=False,
+    ):
         """
         :param train_end_to_end (bool): Enable backprop between conv blocks
         :param projector_mlp (bool): Whether to project representations through an MLP before calculating loss
@@ -16,12 +24,14 @@ class LPLNet(nn.Module):
 
         # Encoder
         # Only one encoder arch provided here, so this class is sort of redundant at the moment
-        self.encoder = VGG11Encoder(train_end_to_end=train_end_to_end,
-                                    projector_mlp=projector_mlp,
-                                    hidden_layer_size=mlp_hidden_size,
-                                    projection_size=projection_size,
-                                    base_image_size=base_image_size,
-                                    no_biases=no_biases)
+        self.encoder = VGG11Encoder(
+            train_end_to_end=train_end_to_end,
+            projector_mlp=projector_mlp,
+            hidden_layer_size=mlp_hidden_size,
+            projection_size=projection_size,
+            base_image_size=base_image_size,
+            no_biases=no_biases,
+        )
 
         self.feature_size = self.encoder.channel_sizes[-1]
 

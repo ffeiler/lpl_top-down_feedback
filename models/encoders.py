@@ -16,10 +16,12 @@ class MLP(nn.Module):
         self.output_dim = output_dim
         self.input_dim = input_dim
 
-        self.net = nn.Sequential(nn.Linear(input_dim, hidden_dim, bias=not no_biases),
-                                 nn.ReLU(inplace=True),
-                                 nn.Linear(hidden_dim, output_dim, bias=not no_biases),
-                                 nn.ReLU(inplace=True))
+        self.net = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim, bias=not no_biases),
+            nn.ReLU(inplace=True),
+            nn.Linear(hidden_dim, output_dim, bias=not no_biases),
+            nn.ReLU(inplace=True),
+        )
 
     def forward(self, x):
         return self.net(x)
@@ -30,7 +32,9 @@ class ConvBlock(nn.Module):
     Simple convolutional block with 3x3 conv filters used for VGG-like architectures
     """
 
-    def __init__(self, in_channels, out_channels, pooling=True, kernel_size=3, padding=1, stride=1, groups=1, no_biases=False):
+    def __init__(
+        self, in_channels, out_channels, pooling=True, kernel_size=3, padding=1, stride=1, groups=1, no_biases=False
+    ):
         """
         :param in_channels (int):
         :param out_channels (int):
@@ -39,8 +43,15 @@ class ConvBlock(nn.Module):
 
         super(ConvBlock, self).__init__()
 
-        conv_layer = nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, padding=padding, stride=stride,
-                               bias=not no_biases, groups=groups)
+        conv_layer = nn.Conv2d(
+            in_channels,
+            out_channels,
+            kernel_size=kernel_size,
+            padding=padding,
+            stride=stride,
+            bias=not no_biases,
+            groups=groups,
+        )
 
         if pooling:
             pool_layer = nn.MaxPool2d(kernel_size=2, stride=2)
@@ -58,7 +69,15 @@ class VGG11Encoder(nn.Module):
     Custom implementation of VGG11 encoder with added support for greedy training
     """
 
-    def __init__(self, train_end_to_end=False, projector_mlp=False, projection_size=256, hidden_layer_size=2048, base_image_size=32, no_biases=False):
+    def __init__(
+        self,
+        train_end_to_end=False,
+        projector_mlp=False,
+        projection_size=256,
+        hidden_layer_size=2048,
+        base_image_size=32,
+        no_biases=False,
+    ):
         """
         :param train_end_to_end (bool): Enable backprop between conv blocks
         :param projector_mlp (bool): Whether to project representations through an MLP before calculating loss
@@ -75,7 +94,11 @@ class VGG11Encoder(nn.Module):
         # Configure end-to-end/layer-local architecture with or without projection MLP(s)
         self.layer_local = not train_end_to_end
         self.num_trainable_hooks = 1 if train_end_to_end else 8
-        self.projection_sizes = [projection_size]*self.num_trainable_hooks if projector_mlp else self.channel_sizes[-self.num_trainable_hooks:]
+        self.projection_sizes = (
+            [projection_size] * self.num_trainable_hooks
+            if projector_mlp
+            else self.channel_sizes[-self.num_trainable_hooks :]
+        )
 
         # Conv Blocks
         self.blocks = nn.ModuleList([])
@@ -91,15 +114,22 @@ class VGG11Encoder(nn.Module):
         for i in range(8):
             if pooling[i]:
                 feature_map_size /= 2
-            self.blocks.append(ConvBlock(self.channel_sizes[i], self.channel_sizes[i + 1], pooling=pooling[i], no_biases=no_biases))
+            self.blocks.append(
+                ConvBlock(self.channel_sizes[i], self.channel_sizes[i + 1], pooling=pooling[i], no_biases=no_biases)
+            )
             input_dim = self.channel_sizes[i + 1]
             # Attach a projector MLP if specified either at every layer for layer-local training or just at the end
-            if projector_mlp and (self.layer_local or i==7):
-                projector = MLP(input_dim=int(input_dim), hidden_dim=hidden_layer_size, output_dim=projection_size, no_biases=no_biases)
+            if projector_mlp and (self.layer_local or i == 7):
+                projector = MLP(
+                    input_dim=int(input_dim),
+                    hidden_dim=hidden_layer_size,
+                    output_dim=projection_size,
+                    no_biases=no_biases,
+                )
                 self.flattened_feature_dims.append(projection_size)
             else:
                 projector = nn.Identity()
-                self.flattened_feature_dims.append(input_dim*feature_map_size*feature_map_size)
+                self.flattened_feature_dims.append(input_dim * feature_map_size * feature_map_size)
             self.projectors.append(projector)
 
     def forward(self, x):
@@ -115,12 +145,12 @@ class VGG11Encoder(nn.Module):
                 z.append(self.projectors[i](x_pooled))
                 feature_maps.append(x)
                 x = x.detach()
-                
+
         x_pooled = self.pooler(x).view(x.size(0), -1)
-        
+
         # Get outputs for end-to-end training
         if not self.layer_local:
             z.append(self.projectors[-1](x_pooled))
             feature_maps.append(x)
-        
+
         return x_pooled, feature_maps, z

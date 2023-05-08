@@ -1,15 +1,14 @@
+from argparse import ArgumentParser
+
 import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.optim import Adam, SGD
-
 from pl_bolts.optimizers.lr_scheduler import LinearWarmupCosineAnnealingLR
+from torch.optim import SGD, Adam
 
-from argparse import ArgumentParser
-
+from metrics.losses import cosine_pull_loss, cosine_push_loss
 from models.networks import LPLNet
-from metrics.losses import cosine_push_loss, cosine_pull_loss
 
 
 def _stack_spatial_features(a):
@@ -193,11 +192,11 @@ class LPL(pl.LightningModule):
         pull_loss, push_loss, decorr_loss = self.loss_step(batch)
 
         for i in range(len(pull_loss) - 1):
-            self.log('Layerwise validation losses/Layer {} pull loss'.format(i + 1), pull_loss[i], on_epoch=True,
+            self.log(f'Layerwise validation losses/Layer {i+1} pull loss', pull_loss[i], on_epoch=True,
                      on_step=False, logger=True)
-            self.log('Layerwise validation losses/Layer {} push loss'.format(i + 1), push_loss[i], on_epoch=True,
+            self.log(f'Layerwise validation losses/Layer {i+1} push loss', push_loss[i], on_epoch=True,
                      on_step=False, logger=True)
-            self.log('Layerwise validation losses/Layer {} decorr loss'.format(i + 1), decorr_loss[i], on_epoch=True,
+            self.log(f'Layerwise validation losses/Layer {i+1} decorr loss', decorr_loss[i], on_epoch=True,
                      on_step=False, logger=True)
 
         self.log('Layerwise validation losses/Final layer pull loss', pull_loss[-1], on_epoch=True, on_step=False,
