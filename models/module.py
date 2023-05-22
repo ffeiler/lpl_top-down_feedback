@@ -214,15 +214,19 @@ class LPL(pl.LightningModule):
             "Layerwise train losses/Final layer decorr loss", decorr_loss[-1], on_epoch=True, on_step=False, logger=True
         )
 
+        total_pull_loss = pull_loss.sum()
+        total_push_loss = push_loss.sum()
+        total_decorr_loss = decorr_loss.sum()
+
         total_loss = (
-            self.hparams.pull_coeff * pull_loss.sum()
-            + self.hparams.push_coeff * push_loss.sum()
-            + self.hparams.decorr_coeff * decorr_loss.sum()
+            self.hparams.pull_coeff * total_pull_loss
+            + self.hparams.push_coeff * total_push_loss
+            + self.hparams.decorr_coeff * total_decorr_loss
         )
 
-        self.log("Loss/pull_total_train", pull_loss.sum(), on_epoch=True, logger=True)
-        self.log("Loss/push_total_train", push_loss.sum(), on_epoch=True, logger=True)
-        self.log("Loss/decorr_total_train", decorr_loss.sum(), on_epoch=True, logger=True)
+        self.log("Loss/pull_total_train", self.hparams.pull_coeff * total_pull_loss, on_epoch=True, logger=True)
+        self.log("Loss/push_total_train", self.hparams.push_coeff * total_push_loss, on_epoch=True, logger=True)
+        self.log("Loss/decorr_total_train", self.hparams.decorr_coeff * total_decorr_loss, on_epoch=True, logger=True)
         self.log("Loss/train_loss", total_loss, on_epoch=True, logger=True)
         return total_loss
 
@@ -274,15 +278,19 @@ class LPL(pl.LightningModule):
             logger=True,
         )
 
+        total_pull_loss = pull_loss.sum()
+        total_push_loss = push_loss.sum()
+        total_decorr_loss = decorr_loss.sum()
+
         total_loss = (
-            self.hparams.pull_coeff * pull_loss.sum()
-            + self.hparams.push_coeff * push_loss.sum()
-            + self.hparams.decorr_coeff * decorr_loss.sum()
+            self.hparams.pull_coeff * total_pull_loss
+            + self.hparams.push_coeff * total_push_loss
+            + self.hparams.decorr_coeff * total_decorr_loss
         )
 
-        self.log("Loss/pull_total_val", pull_loss.sum(), on_epoch=True, logger=True)
-        self.log("Loss/push_total_val", push_loss.sum(), on_epoch=True, logger=True)
-        self.log("Loss/decorr_total_val", decorr_loss.sum(), on_epoch=True, logger=True)
+        self.log("Loss/pull_total_val", self.hparams.pull_coeff * total_pull_loss, on_epoch=True, logger=True)
+        self.log("Loss/push_total_val", self.hparams.push_coeff * total_push_loss, on_epoch=True, logger=True)
+        self.log("Loss/decorr_total_val", self.hparams.decorr_coeff * total_decorr_loss, on_epoch=True, logger=True)
 
         self.log("Loss/val_loss", total_loss, on_epoch=True, logger=True)
         return total_loss
