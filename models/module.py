@@ -277,6 +277,10 @@ class LPL(pl.LightningModule):
             + self.hparams.decorr_coeff * decorr_loss.sum()
         )
 
+        self.log("Loss/pull_total", pull_loss.sum(), on_epoch=True, logger=True)
+        self.log("Loss/push_total", push_loss.sum(), on_epoch=True, logger=True)
+        self.log("Loss/decorr_total", decorr_loss.sum(), on_epoch=True, logger=True)
+
         self.log("Loss/val_loss", total_loss, on_epoch=True, logger=True)
         return total_loss
 
