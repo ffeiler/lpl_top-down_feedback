@@ -9,6 +9,7 @@ from torch.optim import SGD, Adam
 
 from metrics.losses import cosine_pull_loss, cosine_push_loss
 from models.networks import LPLNet
+from models.encoders import MLP
 
 
 def _stack_spatial_features(a):
@@ -48,6 +49,7 @@ class LPL(pl.LightningModule):
         pull_coeff: float = 1.0,
         push_coeff: float = 1.0,
         decorr_coeff: float = 10.0,
+        topdown_coeff: float = 20.0,
         warmup_epochs: int = 10,
         start_lr: float = 0.0,
         final_lr: float = 1e-6,
@@ -65,6 +67,19 @@ class LPL(pl.LightningModule):
             base_image_size=base_image_size,
             no_biases=no_biases,
         )
+
+        # TODO! hparams for connectivity parameters, also: check for both versions
+        if self.hparams.no_pooling:
+            self.projector_in_dim = self.network.encoder.channel_sizes[4] * (self.fm_sizes[3] ** 2)
+            self.projector_out_dim = self.network.encoder.channel_sizes[1] * (self.fm_sizes[0] ** 2)
+        else:
+            self.projector_in_dim = self.network.encoder.channel_sizes[4]
+            self.projector_out_dim = self.network.encoder.channel_sizes[1]
+
+        self.projector_network = MLP(
+            input_dim=self.projector_in_dim, hidden_dim=256, output_dim=self.projector_out_dim, no_biases=False
+        )
+
         self.pooler = nn.AdaptiveAvgPool2d((1, 1))
         self.optimizer = optimizer
 
@@ -120,20 +135,22 @@ class LPL(pl.LightningModule):
 
         _, fm1, z1 = self.network(img_1)
         _, fm2, z2 = self.network(img_2)
+        num_layers = len(z1)
 
-        pull_loss = torch.zeros(len(z1))
+        pull_loss = torch.zeros(num_layers)
         push_loss = torch.zeros_like(pull_loss)
         decorr_loss = torch.zeros_like(pull_loss)
+        topdown_loss = torch.zeros_like(pull_loss)
 
-        idxes = torch.randperm(len(z2[0]))
+        idxs = torch.randperm(len(z2[0]))
 
-        for i in range(len(z1)):
+        for i in range(num_layers):
             # Pull loss
             if self.hparams.no_pooling:
                 pull_loss[i] = self.predictive_loss(fm1[i], fm2[i])
             else:
                 if self.hparams.shuffle_positives:
-                    pull_loss[i] = self.predictive_loss(z1[i], z2[i][idxes])
+                    pull_loss[i] = self.predictive_loss(z1[i], z2[i][idxs])
                 else:
                     pull_loss[i] = self.predictive_loss(z1[i], z2[i])
 
@@ -173,13 +190,29 @@ class LPL(pl.LightningModule):
             else:
                 decorr_loss[i] = 0.5 * (self.decorr_loss(z1[i]) + self.decorr_loss(z2[i]))
 
+            # Top-down loss
+            """
+            idea: build MLP that projects from 4th to 1st layer. Incorporate the loss as MSE. Could be problematic as oscillations could occur but let's see
+            """
+            if i == 0:
+                if self.hparams.no_pooling:
+                    pfm2 = self.projector_network(fm1[3])
+                    pfm1 = self.projector_network(fm2[3])
+
+                    topdown_loss[i] = 0.5 * (F.mse_loss(pfm2, fm2[i]) + F.mse_loss(pfm1, fm1[i]))
+                else:  # TODO! check if the same network works in both variances
+                    pz2 = self.projector_network(z1[3])
+                    pz1 = self.projector_network(z2[3])
+
+                    topdown_loss[i] = 0.5 * (F.mse_loss(pz2, z2[i]) + F.mse_loss(pz1, z1[i]))
+
         if self.hparams.stale_estimates:
             self.first_epoch_flag = False
 
-        return pull_loss, push_loss, decorr_loss
+        return pull_loss, push_loss, decorr_loss, topdown_loss
 
     def training_step(self, batch, batch_idx):
-        pull_loss, push_loss, decorr_loss = self.loss_step(batch)
+        pull_loss, push_loss, decorr_loss, topdown_loss = self.loss_step(batch)
 
         for i in range(len(pull_loss) - 1):
             self.log(
@@ -203,6 +236,13 @@ class LPL(pl.LightningModule):
                 on_step=False,
                 logger=True,
             )
+            self.log(
+                f"Layerwise train losses/Layer {i + 1} topdown loss",
+                topdown_loss[i],
+                on_epoch=True,
+                on_step=False,
+                logger=True,
+            )
 
         self.log(
             "Layerwise train losses/Final layer pull loss", pull_loss[-1], on_epoch=True, on_step=False, logger=True
@@ -217,21 +257,27 @@ class LPL(pl.LightningModule):
         total_pull_loss = pull_loss.sum()
         total_push_loss = push_loss.sum()
         total_decorr_loss = decorr_loss.sum()
+        total_topdown_loss = topdown_loss.sum()
 
         total_loss = (
             self.hparams.pull_coeff * total_pull_loss
             + self.hparams.push_coeff * total_push_loss
             + self.hparams.decorr_coeff * total_decorr_loss
+            + self.hparams.topdown_coeff * total_topdown_loss
         )
 
         self.log("Loss/pull_total_train", self.hparams.pull_coeff * total_pull_loss, on_epoch=True, logger=True)
         self.log("Loss/push_total_train", self.hparams.push_coeff * total_push_loss, on_epoch=True, logger=True)
         self.log("Loss/decorr_total_train", self.hparams.decorr_coeff * total_decorr_loss, on_epoch=True, logger=True)
+        self.log(
+            "Loss/topdown_total_train", self.hparams.topdown_coeff * total_topdown_loss, on_epoch=True, logger=True
+        )
         self.log("Loss/train_loss", total_loss, on_epoch=True, logger=True)
+
         return total_loss
 
     def validation_step(self, batch, batch_idx):
-        pull_loss, push_loss, decorr_loss = self.loss_step(batch)
+        pull_loss, push_loss, decorr_loss, topdown_loss = self.loss_step(batch)
 
         for i in range(len(pull_loss) - 1):
             self.log(
@@ -251,6 +297,13 @@ class LPL(pl.LightningModule):
             self.log(
                 f"Layerwise validation losses/Layer {i+1} decorr loss",
                 decorr_loss[i],
+                on_epoch=True,
+                on_step=False,
+                logger=True,
+            )
+            self.log(
+                f"Layerwise validation losses/Layer {i + 1} topdown loss",
+                topdown_loss[i],
                 on_epoch=True,
                 on_step=False,
                 logger=True,
@@ -281,16 +334,19 @@ class LPL(pl.LightningModule):
         total_pull_loss = pull_loss.sum()
         total_push_loss = push_loss.sum()
         total_decorr_loss = decorr_loss.sum()
+        total_topdown_loss = topdown_loss.sum()
 
         total_loss = (
             self.hparams.pull_coeff * total_pull_loss
             + self.hparams.push_coeff * total_push_loss
             + self.hparams.decorr_coeff * total_decorr_loss
+            + self.hparams.topdown_coeff * total_topdown_loss
         )
 
         self.log("Loss/pull_total_val", self.hparams.pull_coeff * total_pull_loss, on_epoch=True, logger=True)
         self.log("Loss/push_total_val", self.hparams.push_coeff * total_push_loss, on_epoch=True, logger=True)
         self.log("Loss/decorr_total_val", self.hparams.decorr_coeff * total_decorr_loss, on_epoch=True, logger=True)
+        self.log("Loss/topdown_total_val", self.hparams.topdown_coeff * total_topdown_loss, on_epoch=True, logger=True)
 
         self.log("Loss/val_loss", total_loss, on_epoch=True, logger=True)
         return total_loss

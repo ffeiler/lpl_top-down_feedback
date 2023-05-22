@@ -105,7 +105,7 @@ class SSLEvalCallback(Callback):
 
     def do_linear_classification_eval(self, trainer, pl_module, representations, repr_type):
         dataset = TensorDataset(representations, self.labels)
-        train_dataloader = DataLoader(dataset, batch_size=512, num_workers=48)
+        train_dataloader = DataLoader(dataset, batch_size=512)
         self.reinitialize_linear_evaluator(pl_module)
         readout_trainer = pl.Trainer(
             accelerator="gpu",
@@ -184,7 +184,7 @@ class SSLEvalCallback(Callback):
         pl_module.logger.log_metrics(metrics, step=trainer.global_step)
 
     def log_histograms(self, trainer, epoch_num, representations):
-        tensorboard = trainer.logger.experiment
+        logger = trainer.logger.experiment
 
         X = representations
         num_units = X.shape[-1]
@@ -210,17 +210,15 @@ class SSLEvalCallback(Callback):
         off_diag_idxs = torch.triu_indices(num_samples, num_samples, offset=1)
         cos_dists = cos_dists[off_diag_idxs[0], off_diag_idxs[1]]
 
-        tensorboard.add_histogram("Activity Statistics/unit_activities", mean_sq_activity, global_step=epoch_num)
-        tensorboard.add_histogram("Activity Statistics/unit_correlations", cross_unit_corrs, global_step=epoch_num)
+        logger.add_histogram("Activity Statistics/unit_activities", mean_sq_activity, global_step=epoch_num)
+        logger.add_histogram("Activity Statistics/unit_correlations", cross_unit_corrs, global_step=epoch_num)
 
-        tensorboard.add_histogram("Correlation Matrix/eig_vals", eig_vals_corr, global_step=epoch_num)
-        tensorboard.add_histogram(
+        logger.add_histogram("Correlation Matrix/eig_vals", eig_vals_corr, global_step=epoch_num)
+        logger.add_histogram(
             "Correlation Matrix/normalized_eig_vals", torch.log(eig_vals_corr_norm), global_step=epoch_num
         )
 
-        tensorboard.add_histogram("Gramian Matrix/eig_vals", eig_vals_gram, global_step=epoch_num)
-        tensorboard.add_histogram(
-            "Gramian Matrix/normalized_eig_vals", torch.log(eig_vals_gram_norm), global_step=epoch_num
-        )
+        logger.add_histogram("Gramian Matrix/eig_vals", eig_vals_gram, global_step=epoch_num)
+        logger.add_histogram("Gramian Matrix/normalized_eig_vals", torch.log(eig_vals_gram_norm), global_step=epoch_num)
 
-        tensorboard.add_histogram("Embedding Similarity/cos_dists", cos_dists, global_step=epoch_num)
+        logger.add_histogram("Embedding Similarity/cos_dists", cos_dists, global_step=epoch_num)

@@ -64,6 +64,7 @@ def parse_args():
     parser.add_argument("--train_with_supervision", action="store_true")
     parser.add_argument("--use_negative_samples", action="store_true")
     parser.add_argument("--train_end_to_end", action="store_true")
+    parser.add_argument("--topdown", action="store_true")
 
     parser = add_hyperparameter_args(parser)
     parser = LPL.add_model_specific_args(parser)

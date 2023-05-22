@@ -109,11 +109,13 @@ class VGG11Encoder(nn.Module):
 
         # Pooler
         self.pooler = nn.AdaptiveAvgPool2d((1, 1))
+        self.fm_sizes = []
 
         feature_map_size = base_image_size
         for i in range(8):
             if pooling[i]:
                 feature_map_size /= 2
+            self.fm_sizes.append(feature_map_size)
             self.blocks.append(
                 ConvBlock(self.channel_sizes[i], self.channel_sizes[i + 1], pooling=pooling[i], no_biases=no_biases)
             )
