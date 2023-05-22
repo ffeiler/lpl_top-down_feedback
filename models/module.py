@@ -220,6 +220,9 @@ class LPL(pl.LightningModule):
             + self.hparams.decorr_coeff * decorr_loss.sum()
         )
 
+        self.log("Loss/pull_total_train", pull_loss.sum(), on_epoch=True, logger=True)
+        self.log("Loss/push_total_train", push_loss.sum(), on_epoch=True, logger=True)
+        self.log("Loss/decorr_total_train", decorr_loss.sum(), on_epoch=True, logger=True)
         self.log("Loss/train_loss", total_loss, on_epoch=True, logger=True)
         return total_loss
 
@@ -277,9 +280,9 @@ class LPL(pl.LightningModule):
             + self.hparams.decorr_coeff * decorr_loss.sum()
         )
 
-        self.log("Loss/pull_total", pull_loss.sum(), on_epoch=True, logger=True)
-        self.log("Loss/push_total", push_loss.sum(), on_epoch=True, logger=True)
-        self.log("Loss/decorr_total", decorr_loss.sum(), on_epoch=True, logger=True)
+        self.log("Loss/pull_total_val", pull_loss.sum(), on_epoch=True, logger=True)
+        self.log("Loss/push_total_val", push_loss.sum(), on_epoch=True, logger=True)
+        self.log("Loss/decorr_total_val", decorr_loss.sum(), on_epoch=True, logger=True)
 
         self.log("Loss/val_loss", total_loss, on_epoch=True, logger=True)
         return total_loss

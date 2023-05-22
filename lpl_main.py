@@ -34,8 +34,8 @@ def add_hyperparameter_args(parent_parser):
     parser.add_argument("--max_epochs", type=int, default=800, help="number of total epochs to run")
     parser.add_argument("--max_steps", type=int, default=-1, help="max steps")
     parser.add_argument("--optimizer", choices=["adam", "sgd"], default="adam")
-    parser.add_argument("--batch_size", type=int, default=1024)
-    parser.add_argument("--learning_rate", type=float, default=1e-3)
+    parser.add_argument("--batch_size", type=int, default=512)
+    parser.add_argument("--base_learning_rate", type=float, default=0.25 * 1e-3)
     parser.add_argument("--weight_decay", type=float, default=1.5e-6)
     parser.add_argument("--warmup_epochs", type=int, default=10)
     parser.add_argument("--start_lr", type=float, default=0, help="initial warmup learning rate")
@@ -73,6 +73,7 @@ def parse_args():
 
 def cli_main():
     args = parse_args()
+    args.learning_rate = args.base_learning_rate * args.batch_size / 256
 
     # Set up random seeds for reproducibility
     seed_everything(args.random_seed)
@@ -101,10 +102,10 @@ def cli_main():
         dm = STL10DataModule.from_argparse_args(args, data_dir=data_dir)
         normalization = stl10_normalization()
         if args.train_with_supervision:
-            dm.train_dataloader = dm.train_dataloader_labeled
+            dm.train_dataloader = dm.train_dataloader_labeled(num_workers=args.num_workers)
         else:
-            dm.train_dataloader = dm.train_dataloader
-        dm.val_dataloader = dm.train_dataloader_labeled
+            dm.train_dataloader = dm.train_dataloader(num_workers=args.num_workers)
+        dm.val_dataloader = dm.train_dataloader_labeled(num_workers=args.num_workers)
         (c, h, w) = dm.dims
         if args.downsample_images:
             h = 32
@@ -152,9 +153,9 @@ def cli_main():
     trainer = pl.Trainer(
         max_epochs=args.max_epochs,
         max_steps=None if args.max_steps == -1 else args.max_steps,
-        gpus=args.gpus,
+        devices=args.gpus,
         num_nodes=args.num_nodes,
-        accelerator="ddp" if args.gpus > 1 else None,
+        accelerator="ddp" if args.gpus > 1 else "gpu",
         sync_batchnorm=True if args.gpus > 1 else False,
         callbacks=callbacks,
         logger=tensorboard_logger,

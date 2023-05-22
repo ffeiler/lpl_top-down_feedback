@@ -105,10 +105,14 @@ class SSLEvalCallback(Callback):
 
     def do_linear_classification_eval(self, trainer, pl_module, representations, repr_type):
         dataset = TensorDataset(representations, self.labels)
-        train_dataloader = DataLoader(dataset, batch_size=512)
+        train_dataloader = DataLoader(dataset, batch_size=512, num_workers=48)
         self.reinitialize_linear_evaluator(pl_module)
         readout_trainer = pl.Trainer(
-            gpus=trainer.device_ids, max_epochs=self.num_epochs, enable_checkpointing=False, logger=False
+            accelerator="gpu",
+            devices=trainer.device_ids,
+            max_epochs=self.num_epochs,
+            enable_checkpointing=False,
+            logger=False,
         )
         readout_trainer.fit(self.linear_evaluator, train_dataloader)
         self.linear_evaluator.to(pl_module.device)
