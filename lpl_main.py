@@ -45,10 +45,30 @@ def add_hyperparameter_args(parent_parser):
     parser.add_argument("--fast_dev_run", default=1, type=int)
     parser.add_argument("--num_nodes", default=1, type=int, help="number of nodes for training")
     parser.add_argument("--gpus", default=1, type=int, help="number of gpus to train on")
-    parser.add_argument("--num_workers", default=16, type=int, help="num of workers per GPU")
+    parser.add_argument("--num_workers", default=48, type=int, help="num of workers per GPU")
     parser.add_argument("--fp32", action="store_true")
 
     return parser
+
+
+def parse_args():
+    parser = ArgumentParser()
+
+    parser.add_argument("--random_seed", type=int, default=24)
+    parser.add_argument("--experiment_name", type=str, default=get_time_stamp())
+    parser.add_argument("--resume_from_checkpoint", action="store_true")
+
+    parser.add_argument("--verbose_printing", action="store_true")
+
+    # Model options
+    parser.add_argument("--train_with_supervision", action="store_true")
+    parser.add_argument("--use_negative_samples", action="store_true")
+    parser.add_argument("--train_end_to_end", action="store_true")
+
+    parser = add_hyperparameter_args(parser)
+    parser = LPL.add_model_specific_args(parser)
+    args = parser.parse_args()
+    return args
 
 
 def cli_main():
@@ -107,6 +127,7 @@ def cli_main():
     dm.prepare_data()
     dm.setup()
 
+    # Baselines
     if args.train_with_supervision:
         model = SupervisedBaseline(**args.__dict__)
     elif args.use_negative_samples:
@@ -140,26 +161,6 @@ def cli_main():
         profiler="simple",
     )
     trainer.fit(model, dm)
-
-
-def parse_args():
-    parser = ArgumentParser()
-
-    parser.add_argument("--random_seed", type=int, default=24)
-    parser.add_argument("--experiment_name", type=str, default=get_time_stamp())
-    parser.add_argument("--resume_from_checkpoint", action="store_true")
-
-    parser.add_argument("--verbose_printing", action="store_true")
-
-    # Model options
-    parser.add_argument("--train_with_supervision", action="store_true")
-    parser.add_argument("--use_negative_samples", action="store_true")
-    parser.add_argument("--train_end_to_end", action="store_true")
-
-    parser = add_hyperparameter_args(parser)
-    parser = LPL.add_model_specific_args(parser)
-    args = parser.parse_args()
-    return args
 
 
 if __name__ == "__main__":
