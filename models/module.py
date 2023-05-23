@@ -70,14 +70,16 @@ class LPL(pl.LightningModule):
 
         # TODO! hparams for connectivity parameters, also: check for both versions
         if self.hparams.no_pooling:
-            self.projector_in_dim = self.network.encoder.channel_sizes[4] * (self.fm_sizes[3] ** 2)
-            self.projector_out_dim = self.network.encoder.channel_sizes[1] * (self.fm_sizes[0] ** 2)
+            self.projector_in_dim = int(self.network.encoder.channel_sizes[4] * (self.network.encoder.fm_sizes[3] ** 2))
+            self.projector_out_dim = int(
+                self.network.encoder.channel_sizes[1] * (self.network.encoder.fm_sizes[0] ** 2)
+            )
         else:
             self.projector_in_dim = self.network.encoder.channel_sizes[4]
             self.projector_out_dim = self.network.encoder.channel_sizes[1]
 
         self.projector_network = MLP(
-            input_dim=self.projector_in_dim, hidden_dim=256, output_dim=self.projector_out_dim, no_biases=False
+            input_dim=self.projector_in_dim, hidden_dim=512, output_dim=self.projector_out_dim, no_biases=False
         )
 
         self.pooler = nn.AdaptiveAvgPool2d((1, 1))
@@ -200,7 +202,7 @@ class LPL(pl.LightningModule):
                     pfm1 = self.projector_network(fm2[3])
 
                     topdown_loss[i] = 0.5 * (F.mse_loss(pfm2, fm2[i]) + F.mse_loss(pfm1, fm1[i]))
-                else:  # TODO! check if the same network works in both variances
+                else:
                     pz2 = self.projector_network(z1[3])
                     pz1 = self.projector_network(z2[3])
 
@@ -257,7 +259,10 @@ class LPL(pl.LightningModule):
         total_pull_loss = pull_loss.sum()
         total_push_loss = push_loss.sum()
         total_decorr_loss = decorr_loss.sum()
-        total_topdown_loss = topdown_loss.sum()
+        if self.hparams.topdown:
+            total_topdown_loss = topdown_loss.sum()
+        else:
+            total_topdown_loss = 0.0
 
         total_loss = (
             self.hparams.pull_coeff * total_pull_loss
@@ -334,7 +339,10 @@ class LPL(pl.LightningModule):
         total_pull_loss = pull_loss.sum()
         total_push_loss = push_loss.sum()
         total_decorr_loss = decorr_loss.sum()
-        total_topdown_loss = topdown_loss.sum()
+        if self.hparams.topdown:
+            total_topdown_loss = topdown_loss.sum()
+        else:
+            total_topdown_loss = 0.0
 
         total_loss = (
             self.hparams.pull_coeff * total_pull_loss

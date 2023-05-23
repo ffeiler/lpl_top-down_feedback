@@ -8,7 +8,7 @@ def get_project_root() -> str:
 
 def get_time_stamp() -> str:
     current_time = datetime.now()
-    return current_time.strftime("%m%d%H%M%S")
+    return current_time.strftime("%m-%d-%H:%M:%S")
 
 
 def generate_descriptor(

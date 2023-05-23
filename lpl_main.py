@@ -88,6 +88,10 @@ def cli_main():
     tensorboard_logger = pl_loggers.TensorBoardLogger(
         os.path.join(ouputdir, dataset), name=args.experiment_name, version=experiment_descriptor
     )
+    # wandb_logger = pl_loggers.WandbLogger(
+    #     project="lpl",
+    #     name=f"{args.experiment_name}/{experiment_descriptor}",
+    # )
 
     # Create datamodule
     data_dir = os.path.join(os.path.expanduser("data/datasets"), args.dataset)
