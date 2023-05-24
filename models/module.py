@@ -8,8 +8,8 @@ from pl_bolts.optimizers.lr_scheduler import LinearWarmupCosineAnnealingLR
 from torch.optim import SGD, Adam
 
 from metrics.losses import cosine_pull_loss, cosine_push_loss
-from models.networks import LPLNet
 from models.encoders import MLP
+from models.networks import LPLNet
 
 
 def _stack_spatial_features(a):
@@ -196,13 +196,13 @@ class LPL(pl.LightningModule):
             """
             idea: build MLP that projects from 4th to 1st layer. Incorporate the loss as MSE. Could be problematic as oscillations could occur but let's see
             """
-            if i == 0:
+            if self.hparams.topdown and i == 0:
                 if self.hparams.no_pooling:
                     pfm2 = self.projector_network(fm1[3])
                     pfm1 = self.projector_network(fm2[3])
 
                     topdown_loss[i] = 0.5 * (F.mse_loss(pfm2, fm2[i]) + F.mse_loss(pfm1, fm1[i]))
-                else:
+                elif not self.network.encoder.layer_local:  # z1 and z2 are of length 1 (final layer)
                     pz2 = self.projector_network(z1[3])
                     pz1 = self.projector_network(z2[3])
 
