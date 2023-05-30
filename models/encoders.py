@@ -142,17 +142,13 @@ class VGG11Encoder(nn.Module):
 
             # For layer-local training, record intermediate feature maps and pooled layer activities z (after projection if specified)
             # Also make sure to detach layer outputs so that gradients are not backproped
+            x_pooled = self.pooler(x).view(x.size(0), -1)
+            z.append(self.projectors[i](x_pooled))
+            feature_maps.append(x)
+
             if self.layer_local:
-                x_pooled = self.pooler(x).view(x.size(0), -1)
-                z.append(self.projectors[i](x_pooled))
-                feature_maps.append(x)
                 x = x.detach()
 
         x_pooled = self.pooler(x).view(x.size(0), -1)
-
-        # Get outputs for end-to-end training
-        if not self.layer_local:
-            z.append(self.projectors[-1](x_pooled))
-            feature_maps.append(x)
 
         return x_pooled, feature_maps, z

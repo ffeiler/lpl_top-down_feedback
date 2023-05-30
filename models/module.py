@@ -137,6 +137,7 @@ class LPL(pl.LightningModule):
 
         _, fm1, z1 = self.network(img_1)
         _, fm2, z2 = self.network(img_2)
+
         num_layers = len(z1)
 
         pull_loss = torch.zeros(num_layers)
@@ -211,12 +212,20 @@ class LPL(pl.LightningModule):
         if self.hparams.stale_estimates:
             self.first_epoch_flag = False
 
+        # TODO: currenty overkill since we compute everything for every layer even if we don't use it
+        if not self.network.encoder.layer_local:
+            pull_loss = pull_loss[-1].unsqueeze(0)
+            push_loss = push_loss[-1].unsqueeze(0)
+            decorr_loss = decorr_loss[-1].unsqueeze(0)
+            topdown_loss = topdown_loss.sum()
+
         return pull_loss, push_loss, decorr_loss, topdown_loss
 
     def training_step(self, batch, batch_idx):
         pull_loss, push_loss, decorr_loss, topdown_loss = self.loss_step(batch)
+        number_losses = len(pull_loss)
 
-        for i in range(len(pull_loss) - 1):
+        for i in range(number_losses - 1):
             self.log(
                 f"Layerwise train losses/Layer {i + 1} pull loss",
                 pull_loss[i],
@@ -283,8 +292,9 @@ class LPL(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         pull_loss, push_loss, decorr_loss, topdown_loss = self.loss_step(batch)
+        number_losses = len(pull_loss)
 
-        for i in range(len(pull_loss) - 1):
+        for i in range(number_losses - 1):
             self.log(
                 f"Layerwise validation losses/Layer {i+1} pull loss",
                 pull_loss[i],
