@@ -109,7 +109,7 @@ class VGG11Encoder(nn.Module):
 
         # Pooler
         self.pooler = nn.AdaptiveAvgPool2d((1, 1))
-        self.fm_sizes = []
+        self.fm_sizes = [0]
 
         feature_map_size = base_image_size
         for i in range(8):

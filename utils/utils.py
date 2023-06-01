@@ -34,9 +34,11 @@ def generate_descriptor(
 
     if train_end_to_end:
         descriptor += "_end-to-end"
+    else:
+        descriptor += "_local"
 
     if topdown:
-        descriptor += "_topdown"
+        descriptor += "_top-down"
 
     return descriptor
 

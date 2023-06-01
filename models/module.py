@@ -68,19 +68,10 @@ class LPL(pl.LightningModule):
             no_biases=no_biases,
         )
 
-        # TODO! hparams for connectivity parameters, also: check for both versions
-        if self.hparams.no_pooling:
-            self.projector_in_dim = int(self.network.encoder.channel_sizes[4] * (self.network.encoder.fm_sizes[3] ** 2))
-            self.projector_out_dim = int(
-                self.network.encoder.channel_sizes[1] * (self.network.encoder.fm_sizes[0] ** 2)
-            )
-        else:
-            self.projector_in_dim = self.network.encoder.channel_sizes[4]
-            self.projector_out_dim = self.network.encoder.channel_sizes[1]
-
-        self.projector_network = MLP(
-            input_dim=self.projector_in_dim, hidden_dim=512, output_dim=self.projector_out_dim, no_biases=False
-        )
+        #  Top-down connections. [to, [from, from, ...]]
+        self.distance_top_down = 6
+        self.links = [[i, i + self.distance_top_down] for i in range(1, 9 - self.distance_top_down)]
+        self.topdown_projectors = [self.initialize_projector(link) for link in self.links]
 
         self.pooler = nn.AdaptiveAvgPool2d((1, 1))
         self.optimizer = optimizer
@@ -104,6 +95,23 @@ class LPL(pl.LightningModule):
             self.first_epoch_flag = True
             self.mean_estimates = []
             self.var_estimates = []
+
+    def initialize_projector(self, link: dict = None, hidden_dim: int = 512, no_biases: bool = False):
+        link_to, link_from = link
+
+        in_dim = self.network.encoder.channel_sizes[link_from]
+        out_dim = self.network.encoder.channel_sizes[link_to]
+
+        if self.hparams.no_pooling:
+            fm_in = self.network.encoder.fm_sizes[link_from]
+            fm_out = self.network.encoder.fm_sizes[link_to]
+
+            in_dim = int(in_dim * (fm_in**2))
+            out_dim = int(out_dim * (fm_out**2))
+
+        projector = MLP(input_dim=in_dim, hidden_dim=hidden_dim, output_dim=out_dim, no_biases=no_biases)
+
+        return projector.cuda()
 
     def forward(self, x):
         # Returns pooled features from final conv layer of the network
@@ -194,19 +202,16 @@ class LPL(pl.LightningModule):
                 decorr_loss[i] = 0.5 * (self.decorr_loss(z1[i]) + self.decorr_loss(z2[i]))
 
             # Top-down loss
-            """
-            idea: build MLP that projects from 4th to 1st layer. Incorporate the loss as MSE. Could be problematic as oscillations could occur but let's see
-            """
-            if self.hparams.topdown and i == 0:
+            if self.hparams.topdown and i < num_layers - self.distance_top_down:
                 if self.hparams.no_pooling:
-                    pfm2 = self.projector_network(fm1[3])
-                    pfm1 = self.projector_network(fm2[3])
-
+                    # note: currently every layer is expected to have its own topdown projector MLP
+                    pfm1 = self.topdown_projectors[i](fm2[i + self.distance_top_down])
+                    pfm2 = self.topdown_projectors[i](fm1[i + self.distance_top_down])
                     topdown_loss[i] = 0.5 * (F.mse_loss(pfm2, fm2[i]) + F.mse_loss(pfm1, fm1[i]))
-                elif not self.network.encoder.layer_local:  # z1 and z2 are of length 1 (final layer)
-                    pz2 = self.projector_network(z1[3])
-                    pz1 = self.projector_network(z2[3])
 
+                else:
+                    pz2 = self.topdown_projectors[i](z1[i + self.distance_top_down])
+                    pz1 = self.topdown_projectors[i](z2[i + self.distance_top_down])
                     topdown_loss[i] = 0.5 * (F.mse_loss(pz2, z2[i]) + F.mse_loss(pz1, z1[i]))
 
         if self.hparams.stale_estimates:
