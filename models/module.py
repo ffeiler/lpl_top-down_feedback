@@ -54,6 +54,8 @@ class LPL(pl.LightningModule):
         start_lr: float = 0.0,
         final_lr: float = 1e-6,
         base_image_size: int = 32,
+        distance_top_down: int = 1,
+        symmetric_topdown: bool = False,
         **kwargs,
     ):
         super(LPL, self).__init__()
@@ -69,9 +71,14 @@ class LPL(pl.LightningModule):
         )
 
         #  Top-down connections. [to, [from, from, ...]]
-        self.distance_top_down = 6
-        self.links = [[i, i + self.distance_top_down] for i in range(1, 9 - self.distance_top_down)]
-        self.topdown_projectors = [self.initialize_projector(link) for link in self.links]
+        self.distance_top_down = distance_top_down
+        self.links = [
+            [i, i + self.distance_top_down]
+            for i in range(1, 9 - self.distance_top_down)
+        ]
+        self.topdown_projectors = [
+            self.initialize_projector(link) for link in self.links
+        ]
 
         self.pooler = nn.AdaptiveAvgPool2d((1, 1))
         self.optimizer = optimizer
@@ -91,12 +98,16 @@ class LPL(pl.LightningModule):
             ), "Projector networks for unpooled feature maps would be too large to fit into memory; currently throws an error"
 
         if stale_estimates:
-            assert not no_pooling, "Stale estimates currently not supported for unpooled training"
+            assert (
+                not no_pooling
+            ), "Stale estimates currently not supported for unpooled training"
             self.first_epoch_flag = True
             self.mean_estimates = []
             self.var_estimates = []
 
-    def initialize_projector(self, link: dict = None, hidden_dim: int = 512, no_biases: bool = False):
+    def initialize_projector(
+        self, link: dict = None, hidden_dim: int = 512, no_biases: bool = False
+    ):
         link_to, link_from = link
 
         in_dim = self.network.encoder.channel_sizes[link_from]
@@ -109,7 +120,12 @@ class LPL(pl.LightningModule):
             in_dim = int(in_dim * (fm_in**2))
             out_dim = int(out_dim * (fm_out**2))
 
-        projector = MLP(input_dim=in_dim, hidden_dim=hidden_dim, output_dim=out_dim, no_biases=no_biases)
+        projector = MLP(
+            input_dim=in_dim,
+            hidden_dim=hidden_dim,
+            output_dim=out_dim,
+            no_biases=no_biases,
+        )
 
         return projector.cuda()
 
@@ -128,13 +144,17 @@ class LPL(pl.LightningModule):
             variance = ((a - a_center) ** 2).sum(dim=0) / (a.shape[0] - 1)
             loss = -torch.log(variance + epsilon).mean()
         else:
-            loss = -(1.0 / (stale_var + epsilon) * (a - stale_mean) ** 2).sum(dim=0).mean() / (a.shape[0] - 1)
+            loss = -(1.0 / (stale_var + epsilon) * (a - stale_mean) ** 2).sum(
+                dim=0
+            ).mean() / (a.shape[0] - 1)
         return loss
 
     def decorr_loss(self, a):
         a_center = a.mean(dim=0).detach()
         a_centered = a - a_center
-        cov = torch.einsum("ij,ik->jk", a_centered, a_centered).fill_diagonal_(0) / (a.shape[0] - 1)
+        cov = torch.einsum("ij,ik->jk", a_centered, a_centered).fill_diagonal_(0) / (
+            a.shape[0] - 1
+        )
         loss = torch.sum(cov**2) / (cov.shape[0] ** 2 - cov.shape[0])
         return loss
 
@@ -174,11 +194,15 @@ class LPL(pl.LightningModule):
 
             # Push loss
             if self.hparams.no_pooling:
-                push_loss[i] = 0.5 * (self.push_loss_fn(fm1[i]) + self.push_loss_fn(fm2[i]))
+                push_loss[i] = 0.5 * (
+                    self.push_loss_fn(fm1[i]) + self.push_loss_fn(fm2[i])
+                )
             else:
                 push_loss[i] = 0.5 * (
                     self.push_loss_fn(z1[i], stale_mean=stale_mean, stale_var=stale_var)
-                    + self.push_loss_fn(z2[i], stale_mean=stale_mean, stale_var=stale_var)
+                    + self.push_loss_fn(
+                        z2[i], stale_mean=stale_mean, stale_var=stale_var
+                    )
                 )
 
             # Update stale estimates
@@ -199,20 +223,39 @@ class LPL(pl.LightningModule):
                     + self.decorr_loss(_stack_spatial_features(fm2[i]))
                 )
             else:
-                decorr_loss[i] = 0.5 * (self.decorr_loss(z1[i]) + self.decorr_loss(z2[i]))
+                decorr_loss[i] = 0.5 * (
+                    self.decorr_loss(z1[i]) + self.decorr_loss(z2[i])
+                )
 
             # Top-down loss
             if self.hparams.topdown and i < num_layers - self.distance_top_down:
                 if self.hparams.no_pooling:
                     # note: currently every layer is expected to have its own topdown projector MLP
-                    pfm1 = self.topdown_projectors[i](fm2[i + self.distance_top_down])
-                    pfm2 = self.topdown_projectors[i](fm1[i + self.distance_top_down])
-                    topdown_loss[i] = 0.5 * (F.mse_loss(pfm2, fm2[i]) + F.mse_loss(pfm1, fm1[i]))
-
+                    if self.hparams.symmetric_topdown:
+                        pfm1 = self.topdown_projectors[i](
+                            fm2[i + self.distance_top_down]
+                        )
+                        pfm2 = self.topdown_projectors[i](
+                            fm1[i + self.distance_top_down]
+                        )
+                        topdown_loss[i] = 0.5 * (
+                            F.mse_loss(pfm2, fm2[i]) + F.mse_loss(pfm1, fm1[i])
+                        )
+                    else:
+                        pfm1 = self.topdown_projectors[i](
+                            fm2[i + self.distance_top_down]
+                        )
+                        topdown_loss[i] = F.mse_loss(pfm1, fm1[i])
                 else:
-                    pz2 = self.topdown_projectors[i](z1[i + self.distance_top_down])
-                    pz1 = self.topdown_projectors[i](z2[i + self.distance_top_down])
-                    topdown_loss[i] = 0.5 * (F.mse_loss(pz2, z2[i]) + F.mse_loss(pz1, z1[i]))
+                    if self.hparams.symmetric_topdown:
+                        pz2 = self.topdown_projectors[i](z1[i + self.distance_top_down])
+                        pz1 = self.topdown_projectors[i](z2[i + self.distance_top_down])
+                        topdown_loss[i] = 0.5 * (
+                            F.mse_loss(pz2, z2[i]) + F.mse_loss(pz1, z1[i])
+                        )
+                    else:
+                        pz2 = self.topdown_projectors[i](z1[i + self.distance_top_down])
+                        topdown_loss[i] = F.mse_loss(pz2, z2[i])
 
         if self.hparams.stale_estimates:
             self.first_epoch_flag = False
@@ -261,13 +304,25 @@ class LPL(pl.LightningModule):
             )
 
         self.log(
-            "Layerwise train losses/Final layer pull loss", pull_loss[-1], on_epoch=True, on_step=False, logger=True
+            "Layerwise train losses/Final layer pull loss",
+            pull_loss[-1],
+            on_epoch=True,
+            on_step=False,
+            logger=True,
         )
         self.log(
-            "Layerwise train losses/Final layer push loss", push_loss[-1], on_epoch=True, on_step=False, logger=True
+            "Layerwise train losses/Final layer push loss",
+            push_loss[-1],
+            on_epoch=True,
+            on_step=False,
+            logger=True,
         )
         self.log(
-            "Layerwise train losses/Final layer decorr loss", decorr_loss[-1], on_epoch=True, on_step=False, logger=True
+            "Layerwise train losses/Final layer decorr loss",
+            decorr_loss[-1],
+            on_epoch=True,
+            on_step=False,
+            logger=True,
         )
 
         total_pull_loss = pull_loss.sum()
@@ -285,11 +340,29 @@ class LPL(pl.LightningModule):
             + self.hparams.topdown_coeff * total_topdown_loss
         )
 
-        self.log("Loss/pull_total_train", self.hparams.pull_coeff * total_pull_loss, on_epoch=True, logger=True)
-        self.log("Loss/push_total_train", self.hparams.push_coeff * total_push_loss, on_epoch=True, logger=True)
-        self.log("Loss/decorr_total_train", self.hparams.decorr_coeff * total_decorr_loss, on_epoch=True, logger=True)
         self.log(
-            "Loss/topdown_total_train", self.hparams.topdown_coeff * total_topdown_loss, on_epoch=True, logger=True
+            "Loss/pull_total_train",
+            self.hparams.pull_coeff * total_pull_loss,
+            on_epoch=True,
+            logger=True,
+        )
+        self.log(
+            "Loss/push_total_train",
+            self.hparams.push_coeff * total_push_loss,
+            on_epoch=True,
+            logger=True,
+        )
+        self.log(
+            "Loss/decorr_total_train",
+            self.hparams.decorr_coeff * total_decorr_loss,
+            on_epoch=True,
+            logger=True,
+        )
+        self.log(
+            "Loss/topdown_total_train",
+            self.hparams.topdown_coeff * total_topdown_loss,
+            on_epoch=True,
+            logger=True,
         )
         self.log("Loss/train_loss", total_loss, on_epoch=True, logger=True)
 
@@ -366,10 +439,30 @@ class LPL(pl.LightningModule):
             + self.hparams.topdown_coeff * total_topdown_loss
         )
 
-        self.log("Loss/pull_total_val", self.hparams.pull_coeff * total_pull_loss, on_epoch=True, logger=True)
-        self.log("Loss/push_total_val", self.hparams.push_coeff * total_push_loss, on_epoch=True, logger=True)
-        self.log("Loss/decorr_total_val", self.hparams.decorr_coeff * total_decorr_loss, on_epoch=True, logger=True)
-        self.log("Loss/topdown_total_val", self.hparams.topdown_coeff * total_topdown_loss, on_epoch=True, logger=True)
+        self.log(
+            "Loss/pull_total_val",
+            self.hparams.pull_coeff * total_pull_loss,
+            on_epoch=True,
+            logger=True,
+        )
+        self.log(
+            "Loss/push_total_val",
+            self.hparams.push_coeff * total_push_loss,
+            on_epoch=True,
+            logger=True,
+        )
+        self.log(
+            "Loss/decorr_total_val",
+            self.hparams.decorr_coeff * total_decorr_loss,
+            on_epoch=True,
+            logger=True,
+        )
+        self.log(
+            "Loss/topdown_total_val",
+            self.hparams.topdown_coeff * total_topdown_loss,
+            on_epoch=True,
+            logger=True,
+        )
 
         self.log("Loss/val_loss", total_loss, on_epoch=True, logger=True)
         return total_loss
@@ -386,12 +479,19 @@ class LPL(pl.LightningModule):
                 params_no_weight_decay.append(param)
             else:
                 params.append(param)
-        return [{"params": params}, {"params": params_no_weight_decay, "weight_decay": 0.0}]
+        return [
+            {"params": params},
+            {"params": params_no_weight_decay, "weight_decay": 0.0},
+        ]
 
     def configure_optimizers(self):
         parameters = self.set_param_specific_optim_params(self.named_parameters())
         if self.optimizer == "adam":
-            optimizer = Adam(parameters, lr=self.hparams.learning_rate, weight_decay=self.hparams.weight_decay)
+            optimizer = Adam(
+                parameters,
+                lr=self.hparams.learning_rate,
+                weight_decay=self.hparams.weight_decay,
+            )
         elif self.optimizer == "sgd":
             optimizer = SGD(
                 parameters,
@@ -440,7 +540,11 @@ class SupervisedBaseline(LPL):
 
         self.classifier_heads = nn.ModuleList([])
         for i in range(self.network.encoder.num_trainable_hooks):
-            self.classifier_heads.append(torch.nn.Linear(self.network.encoder.projection_sizes[i], self.num_classes))
+            self.classifier_heads.append(
+                torch.nn.Linear(
+                    self.network.encoder.projection_sizes[i], self.num_classes
+                )
+            )
 
     def loss_step(self, batch):
         (img_1, img_2, _), label = batch
@@ -452,7 +556,9 @@ class SupervisedBaseline(LPL):
         for i in range(len(z1)):
             pred_1 = self.classifier_heads[i](z1[i])
             pred_2 = self.classifier_heads[i](z2[i])
-            loss += 0.5 * (F.cross_entropy(pred_1, label) + F.cross_entropy(pred_2, label))
+            loss += 0.5 * (
+                F.cross_entropy(pred_1, label) + F.cross_entropy(pred_2, label)
+            )
 
         return loss
 

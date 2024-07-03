@@ -12,16 +12,22 @@ def get_time_stamp() -> str:
 
 
 def generate_descriptor(
-    train_with_supervision, use_negative_samples, use_projector_mlp, train_end_to_end, topdown=False, **kwargs
+    train_with_supervision,
+    use_negative_samples,
+    use_projector_mlp,
+    train_end_to_end,
+    topdown=False,
+    symmetric_topdown=False,
+    **kwargs,
 ):
     """
     Function to generate the output folder name for logging with tensorboard
     """
 
     if train_with_supervision:
-        descriptor = "supervised"
+        descriptor = "base_supervised"
     elif use_negative_samples:
-        descriptor = "negative_samples"
+        descriptor = "base_negative_samples"
     else:
         descriptor = "lpl"
 
@@ -39,6 +45,11 @@ def generate_descriptor(
 
     if topdown:
         descriptor += "_top-down"
+        if not symmetric_topdown:
+            descriptor += "_asym"
+        else:
+            descriptor += "_sym"
+        descriptor += f"_dist{kwargs['distance_top_down']}"
 
     return descriptor
 
@@ -49,7 +60,12 @@ def get_checkpoint_path_from_args(**kwargs):
 
     full_path_to_checkpoint = get_project_root()
     full_path_to_checkpoint = os.path.join(
-        full_path_to_checkpoint, "logs", kwargs["dataset"], experiment_name, model_descriptor, "checkpoints"
+        full_path_to_checkpoint,
+        "logs",
+        kwargs["dataset"],
+        experiment_name,
+        model_descriptor,
+        "checkpoints",
     )
     file_name = os.listdir(full_path_to_checkpoint)[0]
     full_path_to_checkpoint = os.path.join(full_path_to_checkpoint, file_name)

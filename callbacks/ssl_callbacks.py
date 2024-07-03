@@ -1,14 +1,17 @@
 from typing import Optional
 
 import pytorch_lightning as pl
-from pytorch_lightning import Callback
+import torch
 from pl_bolts.models.regression import LogisticRegression
+from pytorch_lightning import Callback
+from torch.utils.data import DataLoader, TensorDataset
 from torchmetrics.functional import pairwise_cosine_similarity
 
-import torch
-from torch.utils.data import TensorDataset, DataLoader
-
-from metrics.metrics import compute_cosine_measures, compute_manifold_measures, compute_push_metrics
+from metrics.metrics import (
+    compute_cosine_measures,
+    compute_manifold_measures,
+    compute_push_metrics,
+)
 
 
 class SSLEvalCallback(Callback):
@@ -65,7 +68,9 @@ class SSLEvalCallback(Callback):
         self.labels = []
         self.reinitialize_linear_evaluator(pl_module)
 
-    def on_validation_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx):
+    def on_validation_batch_end(
+        self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx
+    ):
         x, y = self.to_device(batch, pl_module.device)
 
         with torch.no_grad():
@@ -90,20 +95,26 @@ class SSLEvalCallback(Callback):
                 continue
             representations = torch.cat(self.representations[repr_type])
 
-            self.do_linear_classification_eval(trainer, pl_module, representations, repr_type)
+            self.do_linear_classification_eval(
+                trainer, pl_module, representations, repr_type
+            )
             self.do_representation_eval(trainer, pl_module, representations, repr_type)
-            if (trainer.current_epoch + 1) in self.log_hists_at_epochs and repr_type == "default":
+            if (
+                trainer.current_epoch + 1
+            ) in self.log_hists_at_epochs and repr_type == "default":
                 epoch_num = trainer.current_epoch + 1
                 if trainer.global_step == 0:
                     epoch_num = 0
-                self.log_histograms(trainer, epoch_num, representations)
+                # self.log_histograms(trainer, epoch_num, representations)
                 # self.log_projections(trainer, epoch_num, representations)
 
         self.representations = {"default": [], "first_step": [], "final_step": []}
         self.labels = []
         self.images = []
 
-    def do_linear_classification_eval(self, trainer, pl_module, representations, repr_type):
+    def do_linear_classification_eval(
+        self, trainer, pl_module, representations, repr_type
+    ):
         dataset = TensorDataset(representations, self.labels)
         train_dataloader = DataLoader(dataset, batch_size=512)
         self.reinitialize_linear_evaluator(pl_module)
@@ -146,9 +157,11 @@ class SSLEvalCallback(Callback):
         pl_module.logger.log_metrics(metrics, step=trainer.global_step)
 
     def do_representation_eval(self, trainer, pl_module, representations, repr_type):
-        cross_class_mean_cosine, within_class_mean_cosine = compute_cosine_measures(representations, self.labels)
-        mean_class_correlation, mean_class_radius, mean_class_dim, global_radius = compute_manifold_measures(
+        cross_class_mean_cosine, within_class_mean_cosine = compute_cosine_measures(
             representations, self.labels
+        )
+        mean_class_correlation, mean_class_radius, mean_class_dim, global_radius = (
+            compute_manifold_measures(representations, self.labels)
         )
         (
             cosine_push,
@@ -166,10 +179,18 @@ class SSLEvalCallback(Callback):
         else:
             repr_type = " " + repr_type
         metrics = {
-            "Cosine Metrics{}/within_class_mean_cosine".format(repr_type): within_class_mean_cosine,
-            "Cosine Metrics{}/cross_class_mean_cosine".format(repr_type): cross_class_mean_cosine,
-            "Cosine Metrics{}/ratio".format(repr_type): torch.abs(within_class_mean_cosine / cross_class_mean_cosine),
-            "Manifold Metrics{}/mean_class_correlation".format(repr_type): mean_class_correlation,
+            "Cosine Metrics{}/within_class_mean_cosine".format(
+                repr_type
+            ): within_class_mean_cosine,
+            "Cosine Metrics{}/cross_class_mean_cosine".format(
+                repr_type
+            ): cross_class_mean_cosine,
+            "Cosine Metrics{}/ratio".format(repr_type): torch.abs(
+                within_class_mean_cosine / cross_class_mean_cosine
+            ),
+            "Manifold Metrics{}/mean_class_correlation".format(
+                repr_type
+            ): mean_class_correlation,
             "Manifold Metrics{}/mean_class_radius".format(repr_type): mean_class_radius,
             "Manifold Metrics{}/global_radius".format(repr_type): global_radius,
             "Manifold Metrics{}/mean_class_dim".format(repr_type): mean_class_dim,
@@ -177,7 +198,9 @@ class SSLEvalCallback(Callback):
             "Push Metrics{}/uniformity_push".format(repr_type): uniformity_push,
             "Push Metrics{}/kl_push".format(repr_type): kl_push,
             "Push Metrics{}/swd_gaussian_push".format(repr_type): swd_gaussian_push,
-            "Push Metrics{}/swd_hypersphere_push".format(repr_type): swd_hypersphere_push,
+            "Push Metrics{}/swd_hypersphere_push".format(
+                repr_type
+            ): swd_hypersphere_push,
             "Push Metrics{}/swd_hypercube_push".format(repr_type): swd_hypercube_push,
         }
 
@@ -210,15 +233,35 @@ class SSLEvalCallback(Callback):
         off_diag_idxs = torch.triu_indices(num_samples, num_samples, offset=1)
         cos_dists = cos_dists[off_diag_idxs[0], off_diag_idxs[1]]
 
-        logger.add_histogram("Activity Statistics/unit_activities", mean_sq_activity, global_step=epoch_num)
-        logger.add_histogram("Activity Statistics/unit_correlations", cross_unit_corrs, global_step=epoch_num)
-
-        logger.add_histogram("Correlation Matrix/eig_vals", eig_vals_corr, global_step=epoch_num)
         logger.add_histogram(
-            "Correlation Matrix/normalized_eig_vals", torch.log(eig_vals_corr_norm), global_step=epoch_num
+            "Activity Statistics/unit_activities",
+            mean_sq_activity,
+            global_step=epoch_num,
+        )
+        logger.add_histogram(
+            "Activity Statistics/unit_correlations",
+            cross_unit_corrs,
+            global_step=epoch_num,
         )
 
-        logger.add_histogram("Gramian Matrix/eig_vals", eig_vals_gram, global_step=epoch_num)
-        logger.add_histogram("Gramian Matrix/normalized_eig_vals", torch.log(eig_vals_gram_norm), global_step=epoch_num)
+        logger.add_histogram(
+            "Correlation Matrix/eig_vals", eig_vals_corr, global_step=epoch_num
+        )
+        logger.add_histogram(
+            "Correlation Matrix/normalized_eig_vals",
+            torch.log(eig_vals_corr_norm),
+            global_step=epoch_num,
+        )
 
-        logger.add_histogram("Embedding Similarity/cos_dists", cos_dists, global_step=epoch_num)
+        logger.add_histogram(
+            "Gramian Matrix/eig_vals", eig_vals_gram, global_step=epoch_num
+        )
+        logger.add_histogram(
+            "Gramian Matrix/normalized_eig_vals",
+            torch.log(eig_vals_gram_norm),
+            global_step=epoch_num,
+        )
+
+        logger.add_histogram(
+            "Embedding Similarity/cos_dists", cos_dists, global_step=epoch_num
+        )
