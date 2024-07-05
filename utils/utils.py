@@ -45,11 +45,18 @@ def generate_descriptor(
 
     if topdown:
         descriptor += "_top-down"
-        if not symmetric_topdown:
-            descriptor += "_asym"
+        if kwargs.get("error_correction"):
+            descriptor += f"_errCorr_a{kwargs['alpha_error']}"
         else:
-            descriptor += "_sym"
-        descriptor += f"_dist{kwargs['distance_top_down']}"
+            if not symmetric_topdown:
+                descriptor += "_asym"
+            else:
+                descriptor += "_sym"
+            descriptor += f"_dist{kwargs['distance_top_down']}"
+            if kwargs.get("topdown_cross_branch"):
+                descriptor += f"_tdcross"
+            else:
+                descriptor += f"_td-inbranch"
 
     return descriptor
 

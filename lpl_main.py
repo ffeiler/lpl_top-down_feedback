@@ -88,7 +88,10 @@ def parse_args():
     parser.add_argument("--train_end_to_end", action="store_true")
     parser.add_argument("--topdown", action="store_true")
     parser.add_argument("--symmetric_topdown", action="store_true")
+    parser.add_argument("--topdown_cross_branch", action="store_true")
     parser.add_argument("--distance_top_down", type=int, default=1)
+    parser.add_argument("--error_correction", action="store_true")
+    parser.add_argument("--alpha_error", type=float, default=0.1)
 
     parser = add_hyperparameter_args(parser)
     parser = LPL.add_model_specific_args(parser)

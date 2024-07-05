@@ -49,13 +49,16 @@ class LPL(pl.LightningModule):
         pull_coeff: float = 1.0,
         push_coeff: float = 1.0,
         decorr_coeff: float = 10.0,
-        topdown_coeff: float = 20.0,
+        topdown_coeff: float = 5.0,
         warmup_epochs: int = 10,
         start_lr: float = 0.0,
         final_lr: float = 1e-6,
         base_image_size: int = 32,
         distance_top_down: int = 1,
         symmetric_topdown: bool = False,
+        topdown_cross_branch: bool = True,
+        error_correction: bool = False,
+        alpha_error: float = 0.1,
         **kwargs,
     ):
         super(LPL, self).__init__()
@@ -68,6 +71,9 @@ class LPL(pl.LightningModule):
             mlp_hidden_size,
             base_image_size=base_image_size,
             no_biases=no_biases,
+            distance_top_down=distance_top_down,
+            error_correction=error_correction,
+            alpha_error=alpha_error
         )
 
         #  Top-down connections. [to, [from, from, ...]]
@@ -229,33 +235,77 @@ class LPL(pl.LightningModule):
 
             # Top-down loss
             if self.hparams.topdown and i < num_layers - self.distance_top_down:
-                if self.hparams.no_pooling:
-                    # note: currently every layer is expected to have its own topdown projector MLP
-                    if self.hparams.symmetric_topdown:
-                        pfm1 = self.topdown_projectors[i](
-                            fm2[i + self.distance_top_down]
-                        )
-                        pfm2 = self.topdown_projectors[i](
-                            fm1[i + self.distance_top_down]
-                        )
-                        topdown_loss[i] = 0.5 * (
-                            F.mse_loss(pfm2, fm2[i]) + F.mse_loss(pfm1, fm1[i])
-                        )
-                    else:
-                        pfm1 = self.topdown_projectors[i](
-                            fm2[i + self.distance_top_down]
-                        )
-                        topdown_loss[i] = F.mse_loss(pfm1, fm1[i])
-                else:
-                    if self.hparams.symmetric_topdown:
-                        pz2 = self.topdown_projectors[i](z1[i + self.distance_top_down])
-                        pz1 = self.topdown_projectors[i](z2[i + self.distance_top_down])
-                        topdown_loss[i] = 0.5 * (
-                            F.mse_loss(pz2, z2[i]) + F.mse_loss(pz1, z1[i])
-                        )
-                    else:
-                        pz2 = self.topdown_projectors[i](z1[i + self.distance_top_down])
-                        topdown_loss[i] = F.mse_loss(pz2, z2[i])
+                if self.hparams.error_correction == False:
+                    if self.hparams.topdown_cross_branch == True:
+                        if self.hparams.no_pooling == True:
+                            # note: currently every layer is expected to have its own topdown projector MLP
+                            if self.hparams.symmetric_topdown:
+                                pfm1 = self.topdown_projectors[i](
+                                    fm2[i + self.distance_top_down]
+                                )
+                                pfm2 = self.topdown_projectors[i](
+                                    fm1[i + self.distance_top_down]
+                                )
+                                topdown_loss[i] = 0.5 * (
+                                    F.mse_loss(pfm2, fm2[i]) + F.mse_loss(pfm1, fm1[i])
+                                )
+                            else:
+                                pfm1 = self.topdown_projectors[i](
+                                    fm2[i + self.distance_top_down]
+                                )
+                                topdown_loss[i] = F.mse_loss(pfm1, fm1[i])
+                        elif self.hparams.no_pooling == False:
+                            if self.hparams.symmetric_topdown == True:
+                                pz2 = self.topdown_projectors[i](
+                                    z1[i + self.distance_top_down]
+                                )
+                                pz1 = self.topdown_projectors[i](
+                                    z2[i + self.distance_top_down]
+                                )
+                                topdown_loss[i] = 0.5 * (
+                                    F.mse_loss(pz2, z2[i]) + F.mse_loss(pz1, z1[i])
+                                )
+                            elif self.hparams.symmetric_topdown == False:
+                                pz2 = self.topdown_projectors[i](
+                                    z1[i + self.distance_top_down]
+                                )
+                                topdown_loss[i] = F.mse_loss(pz2, z2[i])
+                    elif self.hparams.topdown_cross_branch == False:  # in-branch
+                        if self.hparams.no_pooling:
+                            # note: currently every layer is expected to have its own topdown projector MLP
+                            if self.hparams.symmetric_topdown:
+                                pfm1 = self.topdown_projectors[i](
+                                    fm1[i + self.distance_top_down]
+                                )
+                                pfm2 = self.topdown_projectors[i](
+                                    fm2[i + self.distance_top_down]
+                                )
+                                topdown_loss[i] = 0.5 * (
+                                    F.mse_loss(pfm2, fm2[i]) + F.mse_loss(pfm1, fm1[i])
+                                )
+                            else:
+                                pfm1 = self.topdown_projectors[i](
+                                    fm1[i + self.distance_top_down]
+                                )
+                                topdown_loss[i] = F.mse_loss(pfm1, fm1[i])
+                        else:
+                            if self.hparams.symmetric_topdown:
+                                pz2 = self.topdown_projectors[i](
+                                    z2[i + self.distance_top_down]
+                                )
+                                pz1 = self.topdown_projectors[i](
+                                    z1[i + self.distance_top_down]
+                                )
+                                topdown_loss[i] = 0.5 * (
+                                    F.mse_loss(pz2, z2[i]) + F.mse_loss(pz1, z1[i])
+                                )
+                            else:
+                                pz2 = self.topdown_projectors[i](
+                                    z2[i + self.distance_top_down]
+                                )
+                                topdown_loss[i] = F.mse_loss(pz2, z2[i])
+                elif self.hparams.error_correction == True:
+                    topdown_loss[i] = 0
 
         if self.hparams.stale_estimates:
             self.first_epoch_flag = False
