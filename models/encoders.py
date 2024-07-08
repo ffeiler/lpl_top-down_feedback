@@ -1,6 +1,8 @@
 import math
 
+import torch
 import torch.nn as nn
+from torch import abs, sum
 
 
 class MLP(nn.Module):
@@ -90,6 +92,7 @@ class VGG11Encoder(nn.Module):
         distance_top_down=1,
         error_correction=False,
         alpha_error=0.1,
+        error_nb_updates=1,
     ):
         """
         :param train_end_to_end (bool): Enable backprop between conv blocks
@@ -165,7 +168,11 @@ class VGG11Encoder(nn.Module):
             self.initialize_topdown_projector(link) for link in self.links
         ]
         self.error_correction = error_correction
-        self.alpha_error = alpha_error
+        # self.alpha_error = alpha_error
+        self.alpha_errors = nn.ParameterList(
+            [nn.Parameter(torch.ones(1) * 0.1, requires_grad=True) for i in range(8)]
+        )
+        self.T = error_nb_updates
 
     def initialize_topdown_projector(
         self, link: dict = None, hidden_dim: int = 512, no_biases: bool = False
@@ -181,13 +188,6 @@ class VGG11Encoder(nn.Module):
         stride = math.ceil(out_dim / in_dim)
         kernel_size = out_dim - stride * (in_dim - 1)
         padding = 0
-
-        # projector = MLP(
-        #     input_dim=in_dim,
-        #     hidden_dim=hidden_dim,
-        #     output_dim=out_dim,
-        #     no_biases=no_biases,
-        # )
 
         projector = nn.ConvTranspose2d(
             in_channels=in_channels,
@@ -216,31 +216,42 @@ class VGG11Encoder(nn.Module):
                 if self.layer_local:
                     x = x.detach()
             x_pooled = self.pooler(x).view(x.size(0), -1)
+            return x_pooled, feature_maps, z, pred_error
 
         else:
+            pred_error = [0]
+            # first pass
             x_current = self.blocks[0](x)
-            self.generate_maps(x_current, z, feature_maps, 0)
+            x_pooled = self.pooler(x_current).view(x_current.size(0), -1)
+            z.append(self.projectors[0](x_pooled))
+            feature_maps.append(x_current)
+
             if self.layer_local:
                 x_current = x_current.detach()
 
+            # intermediate layers get corrected
             for i in range(1, 7):
                 x_next = self.blocks[i](x_current)
-                self.generate_maps(x_next, z, feature_maps, i)
-                error = x_current - self.topdown_projectors[i - 1](feature_maps[i])
-                x_current = x_current - self.alpha_error * error
-                x_next = self.blocks[i](x_current)
-                z[i] = self.projectors[i](self.pooler(x_next).view(x.size(0), -1))
-                feature_maps[i] = x_next
-                x_current = x_next
+                error = torch.tensor(0)
+                for t in range(self.T):
+                    prediction = self.topdown_projectors[i - 1](x_next)
+                    error = x_current - prediction
+                    # bn = nn.BatchNorm2d(error.shape[1]).cuda()
+                    # error = bn(error)
+                    # x_current = x_current - abs(self.alpha_error * error)
+                    # x_next = self.blocks[i](x_current)
+                    x_next = x_next + self.alpha_errors[i] * self.blocks[i](error)
+
+                pred_error.append(sum(abs(error)))
+                _next_pooled = self.pooler(x_next).view(x_next.size(0), -1)
+                z.append(self.projectors[i](_next_pooled))
+                feature_maps.append(x_next)
                 if self.layer_local:
                     x_next = x_next.detach()
+                x_current = x_next
 
-            x_last = self.blocks[7](x_next)
+            # last layer cannot receive top-down feedback
+            x_last = self.blocks[-1](x_next)
             x_pooled = self.pooler(x_last).view(x_last.size(0), -1)
 
-        return x_pooled, feature_maps, z
-
-    def generate_maps(self, x, z, feature_maps, i):
-        x_pooled = self.pooler(x).view(x.size(0), -1)
-        z.append(self.projectors[i](x_pooled))
-        feature_maps.append(x)
+            return x_pooled, feature_maps, z, pred_error

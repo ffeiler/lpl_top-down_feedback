@@ -47,6 +47,8 @@ def generate_descriptor(
         descriptor += "_top-down"
         if kwargs.get("error_correction"):
             descriptor += f"_errCorr_a{kwargs['alpha_error']}"
+            descriptor += f"_{kwargs['error_nb_updates']}T"
+
         else:
             if not symmetric_topdown:
                 descriptor += "_asym"

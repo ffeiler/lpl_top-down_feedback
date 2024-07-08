@@ -92,6 +92,7 @@ def parse_args():
     parser.add_argument("--distance_top_down", type=int, default=1)
     parser.add_argument("--error_correction", action="store_true")
     parser.add_argument("--alpha_error", type=float, default=0.1)
+    parser.add_argument("--error_nb_updates", type=int, default=1)
 
     parser = add_hyperparameter_args(parser)
     parser = LPL.add_model_specific_args(parser)
@@ -136,12 +137,14 @@ def cli_main():
         dm = STL10DataModule.from_argparse_args(args, data_dir=data_dir)
         normalization = stl10_normalization()
         if args.train_with_supervision:
-            dm.train_dataloader = dm.train_dataloader_labeled(
-                num_workers=args.num_workers
-            )
+            dm.train_dataloader = dm.train_dataloader_labeled()  #
+            # num_workers=args.num_workers
+            # )
         else:
-            dm.train_dataloader = dm.train_dataloader(num_workers=args.num_workers)
-        dm.val_dataloader = dm.train_dataloader_labeled(num_workers=args.num_workers)
+            dm.train_dataloader = dm.train_dataloader()  # num_workers=args.num_workers)
+        dm.val_dataloader = (
+            dm.train_dataloader_labeled()
+        )  # num_workers=args.num_workers)
         (c, h, w) = dm.dims
         if args.downsample_images:
             h = 32

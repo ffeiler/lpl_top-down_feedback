@@ -49,7 +49,7 @@ class LPL(pl.LightningModule):
         pull_coeff: float = 1.0,
         push_coeff: float = 1.0,
         decorr_coeff: float = 10.0,
-        topdown_coeff: float = 5.0,
+        topdown_coeff: float = 5,
         warmup_epochs: int = 10,
         start_lr: float = 0.0,
         final_lr: float = 1e-6,
@@ -59,6 +59,7 @@ class LPL(pl.LightningModule):
         topdown_cross_branch: bool = True,
         error_correction: bool = False,
         alpha_error: float = 0.1,
+        error_nb_updates: int = 1,
         **kwargs,
     ):
         super(LPL, self).__init__()
@@ -73,7 +74,8 @@ class LPL(pl.LightningModule):
             no_biases=no_biases,
             distance_top_down=distance_top_down,
             error_correction=error_correction,
-            alpha_error=alpha_error
+            alpha_error=alpha_error,
+            error_nb_updates=error_nb_updates,
         )
 
         #  Top-down connections. [to, [from, from, ...]]
@@ -137,7 +139,10 @@ class LPL(pl.LightningModule):
 
     def forward(self, x):
         # Returns pooled features from final conv layer of the network
-        y, _, _ = self.network(x)
+        if self.hparams.error_correction:
+            y, _, _, _ = self.network(x)
+        else:
+            y, _, _ = self.network(x)
         return y
 
     def pull_loss_fn(self, a, b):
@@ -169,8 +174,12 @@ class LPL(pl.LightningModule):
 
         (img_1, img_2, _), _ = batch
 
-        _, fm1, z1 = self.network(img_1)
-        _, fm2, z2 = self.network(img_2)
+        if self.hparams.error_correction:
+            _, fm1, z1, pe1 = self.network(img_1)
+            _, fm2, z2, pe2 = self.network(img_2)
+        else:
+            _, fm1, z1 = self.network(img_1)
+            _, fm2, z2 = self.network(img_2)
 
         num_layers = len(z1)
 
@@ -305,7 +314,8 @@ class LPL(pl.LightningModule):
                                 )
                                 topdown_loss[i] = F.mse_loss(pz2, z2[i])
                 elif self.hparams.error_correction == True:
-                    topdown_loss[i] = 0
+                    topdown_loss[i] = 1e-5 / (2 * 8) * (pe1[i] + pe2[i])
+                    # topdown_loss[i] = 0
 
         if self.hparams.stale_estimates:
             self.first_epoch_flag = False
@@ -387,7 +397,7 @@ class LPL(pl.LightningModule):
             self.hparams.pull_coeff * total_pull_loss
             + self.hparams.push_coeff * total_push_loss
             + self.hparams.decorr_coeff * total_decorr_loss
-            + self.hparams.topdown_coeff * total_topdown_loss
+            # + self.hparams.topdown_coeff * total_topdown_loss
         )
 
         self.log(
