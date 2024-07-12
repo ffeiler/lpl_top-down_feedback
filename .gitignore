@@ -1,15 +1,18 @@
 .idea
 data/
+wandb/
 notebooks/data
 .ipynb_checkpoints/
 __pycache__/
 *.pyc
 lightning_logs/
+_archived_data/
 logs/
 archives/
 *.out
 *.ckpt
 *.pt
+*playground*
 
 .vscode/
 .vscode/*

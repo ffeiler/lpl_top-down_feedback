@@ -12,6 +12,10 @@ class LPLNet(nn.Module):
         mlp_hidden_size=2048,
         base_image_size=32,
         no_biases=False,
+        distance_top_down=1,
+        error_correction=False,
+        alpha_error=0.1,
+        error_nb_updates=1,
     ):
         """
         :param train_end_to_end (bool): Enable backprop between conv blocks
@@ -31,6 +35,10 @@ class LPLNet(nn.Module):
             projection_size=projection_size,
             base_image_size=base_image_size,
             no_biases=no_biases,
+            distance_top_down=distance_top_down,
+            error_correction=error_correction,
+            alpha_error=alpha_error,
+            error_nb_updates=error_nb_updates,
         )
 
         self.feature_size = self.encoder.channel_sizes[-1]

@@ -1,0 +1,17 @@
+figure.figsize: 6, 2.5
+figure.dpi: 300
+
+font.family: serif
+axes.spines.bottom: True
+axes.spines.left: True
+axes.spines.right: False
+axes.spines.top: False
+
+axes.grid: False
+
+axes.titlesize : 18
+axes.labelsize : 14
+# lines.linewidth : 3
+# lines.markersize : 10
+xtick.labelsize : 12
+ytick.labelsize : 12

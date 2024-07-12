@@ -7,7 +7,10 @@ import pytorch_lightning as pl
 import torchvision.transforms as transforms
 from pl_bolts.callbacks.printing import PrintTableMetricsCallback
 from pl_bolts.datamodules import CIFAR10DataModule, ImagenetDataModule, STL10DataModule
-from pl_bolts.models.self_supervised.simclr import SimCLREvalDataTransform, SimCLRTrainDataTransform
+from pl_bolts.models.self_supervised.simclr import (
+    SimCLREvalDataTransform,
+    SimCLRTrainDataTransform,
+)
 from pl_bolts.transforms.dataset_normalizations import (
     cifar10_normalization,
     imagenet_normalization,
@@ -27,32 +30,79 @@ def add_hyperparameter_args(parent_parser):
     parser = ArgumentParser(parents=[parent_parser], add_help=False)
 
     # Data params
-    parser.add_argument("--dataset", type=str, choices=["cifar10", "imagenet2012", "stl10"], default="cifar10")
+    parser.add_argument(
+        "--dataset",
+        type=str,
+        choices=["cifar10", "imagenet2012", "stl10"],
+        default="cifar10",
+    )
     parser.add_argument("--downsample_images", action="store_true")
 
     # Training hyperparams
-    parser.add_argument("--max_epochs", type=int, default=800, help="number of total epochs to run")
+    parser.add_argument(
+        "--max_epochs", type=int, default=800, help="number of total epochs to run"
+    )
     parser.add_argument("--max_steps", type=int, default=-1, help="max steps")
     parser.add_argument("--optimizer", choices=["adam", "sgd"], default="adam")
-    parser.add_argument("--batch_size", type=int, default=1024)
-    parser.add_argument("--learning_rate", type=float, default=1e-3)
+    parser.add_argument("--batch_size", type=int, default=512)
+    parser.add_argument("--base_learning_rate", type=float, default=0.25 * 1e-3)
     parser.add_argument("--weight_decay", type=float, default=1.5e-6)
     parser.add_argument("--warmup_epochs", type=int, default=10)
-    parser.add_argument("--start_lr", type=float, default=0, help="initial warmup learning rate")
-    parser.add_argument("--final_lr", type=float, default=1e-6, help="final learning rate")
+    parser.add_argument(
+        "--start_lr", type=float, default=0, help="initial warmup learning rate"
+    )
+    parser.add_argument(
+        "--final_lr", type=float, default=1e-6, help="final learning rate"
+    )
 
     # Compute params
     parser.add_argument("--fast_dev_run", default=1, type=int)
-    parser.add_argument("--num_nodes", default=1, type=int, help="number of nodes for training")
-    parser.add_argument("--gpus", default=1, type=int, help="number of gpus to train on")
-    parser.add_argument("--num_workers", default=16, type=int, help="num of workers per GPU")
+    parser.add_argument(
+        "--num_nodes", default=1, type=int, help="number of nodes for training"
+    )
+    parser.add_argument(
+        "--gpus", default=1, type=int, help="number of gpus to train on"
+    )
+    parser.add_argument(
+        "--num_workers", default=48, type=int, help="num of workers per GPU"
+    )
     parser.add_argument("--fp32", action="store_true")
 
     return parser
 
 
+def parse_args():
+    parser = ArgumentParser()
+
+    parser.add_argument("--random_seed", type=int, default=3407)
+    parser.add_argument(
+        "--experiment_name", type=str, default="debug"
+    )  # get_time_stamp())
+    parser.add_argument("--resume_from_checkpoint", action="store_true")
+
+    parser.add_argument("--verbose_printing", action="store_true")
+
+    # Model options
+    parser.add_argument("--train_with_supervision", action="store_true")
+    parser.add_argument("--use_negative_samples", action="store_true")
+    parser.add_argument("--train_end_to_end", action="store_true")
+    parser.add_argument("--topdown", action="store_true")
+    parser.add_argument("--symmetric_topdown", action="store_true")
+    parser.add_argument("--topdown_cross_branch", action="store_true")
+    parser.add_argument("--distance_top_down", type=int, default=1)
+    parser.add_argument("--error_correction", action="store_true")
+    parser.add_argument("--alpha_error", type=float, default=0.1)
+    parser.add_argument("--error_nb_updates", type=int, default=1)
+
+    parser = add_hyperparameter_args(parser)
+    parser = LPL.add_model_specific_args(parser)
+    args = parser.parse_args()
+    return args
+
+
 def cli_main():
     args = parse_args()
+    args.learning_rate = args.base_learning_rate * args.batch_size / 256
 
     # Set up random seeds for reproducibility
     seed_everything(args.random_seed)
@@ -64,7 +114,13 @@ def cli_main():
         dataset = dataset + "_downsampled"
     experiment_descriptor = generate_descriptor(**args.__dict__)
     tensorboard_logger = pl_loggers.TensorBoardLogger(
-        os.path.join(ouputdir, dataset), name=args.experiment_name, version=experiment_descriptor
+        os.path.join(ouputdir, dataset),
+        name=args.experiment_name,
+        version=experiment_descriptor,
+    )
+    wandb_logger = pl_loggers.WandbLogger(
+        project="lpl",
+        name=f"{args.experiment_name}/{experiment_descriptor}",
     )
 
     # Create datamodule
@@ -81,16 +137,22 @@ def cli_main():
         dm = STL10DataModule.from_argparse_args(args, data_dir=data_dir)
         normalization = stl10_normalization()
         if args.train_with_supervision:
-            dm.train_dataloader = dm.train_dataloader_labeled
+            dm.train_dataloader = dm.train_dataloader_labeled()  #
+            # num_workers=args.num_workers
+            # )
         else:
-            dm.train_dataloader = dm.train_dataloader
-        dm.val_dataloader = dm.train_dataloader_labeled
+            dm.train_dataloader = dm.train_dataloader()  # num_workers=args.num_workers)
+        dm.val_dataloader = (
+            dm.train_dataloader_labeled()
+        )  # num_workers=args.num_workers)
         (c, h, w) = dm.dims
         if args.downsample_images:
             h = 32
 
     elif args.dataset == "imagenet2012":
-        dm = ImagenetDataModule.from_argparse_args(args, data_dir=data_dir, image_size=196)
+        dm = ImagenetDataModule.from_argparse_args(
+            args, data_dir=data_dir, image_size=196
+        )
         normalization = imagenet_normalization()
         (c, h, w) = dm.dims
 
@@ -99,14 +161,21 @@ def cli_main():
     dm.test_transforms = SimCLREvalDataTransform(h, normalize=normalization)
 
     if args.downsample_images:
-        dm.train_transforms = transforms.Compose([transforms.Resize(32), dm.train_transforms])
-        dm.val_transforms = transforms.Compose([transforms.Resize(32), dm.val_transforms])
-        dm.test_transforms = transforms.Compose([transforms.Resize(32), dm.test_transforms])
+        dm.train_transforms = transforms.Compose(
+            [transforms.Resize(32), dm.train_transforms]
+        )
+        dm.val_transforms = transforms.Compose(
+            [transforms.Resize(32), dm.val_transforms]
+        )
+        dm.test_transforms = transforms.Compose(
+            [transforms.Resize(32), dm.test_transforms]
+        )
 
     args.num_classes = dm.num_classes
     dm.prepare_data()
     dm.setup()
 
+    # Baselines
     if args.train_with_supervision:
         model = SupervisedBaseline(**args.__dict__)
     elif args.use_negative_samples:
@@ -131,35 +200,15 @@ def cli_main():
     trainer = pl.Trainer(
         max_epochs=args.max_epochs,
         max_steps=None if args.max_steps == -1 else args.max_steps,
-        gpus=args.gpus,
+        devices=args.gpus,
         num_nodes=args.num_nodes,
-        accelerator="ddp" if args.gpus > 1 else None,
+        accelerator="ddp" if args.gpus > 1 else "gpu",
         sync_batchnorm=True if args.gpus > 1 else False,
         callbacks=callbacks,
-        logger=tensorboard_logger,
+        logger=wandb_logger,
         profiler="simple",
     )
     trainer.fit(model, dm)
-
-
-def parse_args():
-    parser = ArgumentParser()
-
-    parser.add_argument("--random_seed", type=int, default=24)
-    parser.add_argument("--experiment_name", type=str, default=get_time_stamp())
-    parser.add_argument("--resume_from_checkpoint", action="store_true")
-
-    parser.add_argument("--verbose_printing", action="store_true")
-
-    # Model options
-    parser.add_argument("--train_with_supervision", action="store_true")
-    parser.add_argument("--use_negative_samples", action="store_true")
-    parser.add_argument("--train_end_to_end", action="store_true")
-
-    parser = add_hyperparameter_args(parser)
-    parser = LPL.add_model_specific_args(parser)
-    args = parser.parse_args()
-    return args
 
 
 if __name__ == "__main__":
