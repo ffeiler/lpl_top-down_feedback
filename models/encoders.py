@@ -170,7 +170,10 @@ class VGG11Encoder(nn.Module):
         self.error_correction = error_correction
         # self.alpha_error = alpha_error
         self.alpha_errors = nn.ParameterList(
-            [nn.Parameter(torch.ones(1) * 0.1, requires_grad=True) for i in range(8)]
+            [
+                nn.Parameter(torch.ones(1) * alpha_error, requires_grad=True)
+                for i in range(8)
+            ]
         )
         self.T = error_nb_updates
 
@@ -216,7 +219,7 @@ class VGG11Encoder(nn.Module):
                 if self.layer_local:
                     x = x.detach()
             x_pooled = self.pooler(x).view(x.size(0), -1)
-            return x_pooled, feature_maps, z, pred_error
+            return x_pooled, feature_maps, z
 
         else:
             pred_error = [0]
@@ -225,7 +228,6 @@ class VGG11Encoder(nn.Module):
             x_pooled = self.pooler(x_current).view(x_current.size(0), -1)
             z.append(self.projectors[0](x_pooled))
             feature_maps.append(x_current)
-
             if self.layer_local:
                 x_current = x_current.detach()
 

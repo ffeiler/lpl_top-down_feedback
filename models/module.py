@@ -49,7 +49,7 @@ class LPL(pl.LightningModule):
         pull_coeff: float = 1.0,
         push_coeff: float = 1.0,
         decorr_coeff: float = 10.0,
-        topdown_coeff: float = 5,
+        topdown_coeff: float = 1.0,
         warmup_epochs: int = 10,
         start_lr: float = 0.0,
         final_lr: float = 1e-6,
@@ -85,7 +85,7 @@ class LPL(pl.LightningModule):
             for i in range(1, 9 - self.distance_top_down)
         ]
         self.topdown_projectors = [
-            self.initialize_projector(link) for link in self.links
+            self.initialize_topdown_projector(link) for link in self.links
         ]
 
         self.pooler = nn.AdaptiveAvgPool2d((1, 1))
@@ -113,7 +113,7 @@ class LPL(pl.LightningModule):
             self.mean_estimates = []
             self.var_estimates = []
 
-    def initialize_projector(
+    def initialize_topdown_projector(
         self, link: dict = None, hidden_dim: int = 512, no_biases: bool = False
     ):
         link_to, link_from = link
@@ -314,8 +314,8 @@ class LPL(pl.LightningModule):
                                 )
                                 topdown_loss[i] = F.mse_loss(pz2, z2[i])
                 elif self.hparams.error_correction == True:
-                    topdown_loss[i] = 1e-5 / (2 * 8) * (pe1[i] + pe2[i])
-                    # topdown_loss[i] = 0
+                    # topdown_loss[i] = 1e-5 / (2 * 8) * (pe1[i] + pe2[i])
+                    topdown_loss[i] = 0
 
         if self.hparams.stale_estimates:
             self.first_epoch_flag = False
@@ -393,12 +393,20 @@ class LPL(pl.LightningModule):
         else:
             total_topdown_loss = 0.0
 
-        total_loss = (
-            self.hparams.pull_coeff * total_pull_loss
-            + self.hparams.push_coeff * total_push_loss
-            + self.hparams.decorr_coeff * total_decorr_loss
-            # + self.hparams.topdown_coeff * total_topdown_loss
-        )
+        if self.hparams.error_correction:
+            total_loss = (
+                self.hparams.pull_coeff * total_pull_loss
+                + self.hparams.push_coeff * total_push_loss
+                + self.hparams.decorr_coeff * total_decorr_loss
+                # + self.hparams.topdown_coeff * total_topdown_loss
+            )
+        else:
+            total_loss = (
+                self.hparams.pull_coeff * total_pull_loss
+                + self.hparams.push_coeff * total_push_loss
+                + self.hparams.decorr_coeff * total_decorr_loss
+                + self.hparams.topdown_coeff * total_topdown_loss
+            )
 
         self.log(
             "Loss/pull_total_train",
