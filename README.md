@@ -14,7 +14,7 @@ in the virtual environment you just created. Several useful command-line argumen
 - `--train_with_supervision` trains the same network with supervision.
 - `--use_negative_samples` trains the network with a cosine-distance-based contrastive loss.
 - `--topdown` trains the network with top-down feeback
-Multiple implementations exist, yet the error correction based on Rao & Ballard (1999) yields the best results:
+Multiple implementations exist, yet the error correction based on Rao & Ballard (1999) yields the best results (see `models/encoders.py`):
 ```python
 python lpl_main.py --topdown --distance_top_down 1 --error_correction --error_nb_updates 1 --alpha_error 2.0
 ```
