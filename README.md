@@ -1,4 +1,4 @@
-# Latent Predictive Learning
+# Extend Latent Predictive Learning with Top-Down Feedback
 
 This repository is a fork of [LPL](https://github.com/fmi-basel/latent-predictive-learning), a framework for biologically plausible self-supervised learning. Please refer there for citations, basic setups, usage instructions, and licenses.
 
