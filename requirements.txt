@@ -111,7 +111,7 @@ terminado==0.13.3
 threadpoolctl==3.1.0
 tinycss2==1.1.1
 tomli==2.0.1
-torch==1.11.0
+torch==2.2.0
 torch-tb-profiler==0.4.0
 torchmetrics==0.8.0
 torchvision==0.12.0
