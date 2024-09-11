@@ -123,7 +123,7 @@ umap==0.1.1
 urllib3==1.26.9
 wcwidth==0.2.5
 webencodings==0.5.1
-Werkzeug==2.1.1
+Werkzeug==3.0.3
 widgetsnbextension==3.6.0
 wrapt==1.14.1
 yarl==1.7.2
