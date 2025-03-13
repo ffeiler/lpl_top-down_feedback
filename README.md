@@ -7,7 +7,7 @@ This repository is a fork of [LPL](https://github.com/fmi-basel/latent-predictiv
 To train a deep net with layer-local LPL, simply run
 
 ```
-python lpl_main.py
+python lpl_main.py --max_epochs 800
 ```
 
 in the virtual environment you just created. Several useful command-line arguments are provided in `lpl_main.py` and `models\modules.py`. A few are listed below:
@@ -16,5 +16,5 @@ in the virtual environment you just created. Several useful command-line argumen
 - `--topdown` trains the network with top-down feeback
 Multiple implementations exist, yet the error correction based on Rao & Ballard (1999) yields the best results (see `models/encoders.py`):
 ```python
-python lpl_main.py --topdown --distance_top_down 1 --error_correction --error_nb_updates 1 --alpha_error 2.0
+python lpl_main.py --topdown --distance_top_down 1 --error_correction --error_nb_updates 1 --alpha_error 2.0 --max_epochs 800
 ```
